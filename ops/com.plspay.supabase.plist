@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Starts local Supabase after login once Docker (OrbStack) is up.
+     Install: cp to ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.plspay.supabase.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.plspay.supabase</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/zsh</string><string>-lc</string>
+    <string>for i in $(seq 1 60); do docker info >/dev/null 2>&amp;1 &amp;&amp; break; sleep 5; done; cd /Users/plspay/plspay &amp;&amp; supabase start -x studio,imgproxy,inbucket,edge-runtime,logflare,vector,realtime,storage-api</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/Users/plspay/logs/supabase.log</string>
+  <key>StandardErrorPath</key><string>/Users/plspay/logs/supabase.log</string>
+</dict></plist>

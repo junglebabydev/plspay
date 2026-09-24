@@ -1,0 +1,80 @@
+name: Deploy
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  pilot:
+    name: Pilot (Mac mini)
+    needs: ci
+    runs-on: [self-hosted, macOS, mac-mini]   # GitHub Actions runner installed on the Mac mini
+    environment: pilot
+    env:
+      APP_DIR: /Users/plspay/plspay
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync code to app directory (keeps .env.local)
+        run: rsync -a --delete --exclude .env.local --exclude node_modules --exclude .next ./ "$APP_DIR"/
+      - name: Back up database before migrating (SEC-11)
+        run: "$APP_DIR/scripts/backup.sh pre-deploy"
+      - name: Apply migrations to local database (before app restart)
+        working-directory: ${{ env.APP_DIR }}
+        run: supabase migration up --local
+      - name: Build
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          npm ci
+          npm run build
+      - name: Restart app
+        working-directory: ${{ env.APP_DIR }}
+        run: npx pm2 startOrReload ecosystem.config.cjs --update-env
+      - name: Exposure check (SEC-10)
+        run: "$APP_DIR/scripts/check-exposure.sh"
+      - name: Smoke test public URL
+        run: |
+          sleep 5
+          curl -fsS "${{ vars.PILOT_URL }}" > /dev/null
+          code=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.PILOT_URL }}/p/definitely-not-a-token")
+          test "$code" = "200" || test "$code" = "404"
+          # the database API must not be reachable through the public URL
+          code=$(curl -s -o /dev/null -w "%{http_code}" "${{ vars.PILOT_URL }}/rest/v1/payers")
+          test "$code" = "404"
+
+  cloud:
+    name: Cloud production (phase 2)
+    needs: ci
+    if: vars.CLOUD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production   # set required reviewers in repo settings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Release gate, no pending acceptance tests
+        run: node scripts/check-traceability.mjs --strict
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Migrate Supabase cloud (before app)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+        run: |
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF_PROD }}
+          supabase db push
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          npx vercel build --prod --token=$VERCEL_TOKEN
+          npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN

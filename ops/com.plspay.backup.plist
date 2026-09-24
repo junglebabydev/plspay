@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Nightly backup at 02:30. Install: cp to ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.plspay.backup.plist -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.plspay.backup</string>
+  <key>ProgramArguments</key><array><string>/Users/plspay/plspay/scripts/backup.sh</string><string>nightly</string></array>
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>2</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardErrorPath</key><string>/Users/plspay/backups/backup.log</string>
+</dict></plist>

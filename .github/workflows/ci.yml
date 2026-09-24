@@ -1,0 +1,68 @@
+name: CI
+on:
+  pull_request:
+  workflow_call:   # deploy.yml runs CI before every deploy
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned: the same CLI version as package.json devDependencies and docs/SPEC.md section 9.
+  SUPABASE_CLI_VERSION: 2.117.0
+
+jobs:
+  check:
+    name: Lint, types, unit, traceability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - run: npm ci
+      - run: npm run lint
+      - run: npx next typegen
+      - run: npm run typecheck
+      - run: npm test -- --reporter=verbose
+      - run: npm run trace
+
+  db:
+    name: Database security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: ${{ env.SUPABASE_CLI_VERSION }} }
+      - run: cp supabase/.env.example supabase/.env   # placeholder Twilio values; test OTPs never send
+      - run: supabase start
+      - run: supabase db reset          # applies migrations + seed from scratch
+      - run: supabase test db           # pgTAP: RLS, RPCs, retention, reissue
+      - name: Fail if any public table lacks RLS (SEC-01)
+        run: |
+          n=$(psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -tAc \
+            "select count(*) from pg_tables where schemaname='public' and not rowsecurity")
+          test "$n" = "0"
+
+  e2e:
+    name: End-to-end
+    needs: [check, db]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: npm }
+      - uses: supabase/setup-cli@v1
+        with: { version: ${{ env.SUPABASE_CLI_VERSION }} }
+      - run: npm ci
+      - run: cp supabase/.env.example supabase/.env
+      - run: supabase start
+      - run: supabase db reset
+      - name: Export local Supabase env for the app
+        run: scripts/supabase-env.sh >> "$GITHUB_ENV"
+      - run: docker run -d -p 127.0.0.1:6379:6379 redis:7-alpine
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run build
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: playwright-report, retention-days: 7 }

@@ -1,0 +1,7 @@
+# ~/.cloudflared/config.yml on the Mac mini
+tunnel: plspay
+credentials-file: /Users/plspay/.cloudflared/plspay.json
+ingress:
+  - hostname: plspay.sg          # replace with the real domain
+    service: http://127.0.0.1:3000
+  - service: http_status:404     # everything else, including Supabase, is unreachable

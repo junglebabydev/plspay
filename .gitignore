@@ -1,0 +1,12 @@
+.env.local
+.env*.local
+supabase/.env
+supabase/.temp
+node_modules
+.next
+next-env.d.ts
+playwright-report
+test-results
+playwright/.auth
+*.tsbuildinfo
+.DS_Store
