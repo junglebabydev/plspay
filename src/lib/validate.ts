@@ -52,9 +52,13 @@ export const payerInputSchema = z.object({
   amount_cents: z.number().int().nonnegative().optional(),
 });
 
+export const COLLECTION_KINDS = ["personal", "business"] as const;
+export type CollectionKind = (typeof COLLECTION_KINDS)[number];
+
 export const newCollectionSchema = z
   .object({
     title: z.string().trim().min(1, "Give the collection a title").max(40, "Titles are 40 characters max"),
+    kind: z.enum(COLLECTION_KINDS, "Choose Personal or Business receipt"), // AC-F03-09
     mode: z.enum(["split", "custom"]),
     total_cents: z.number().int().nonnegative().optional(),
     include_organiser: z.boolean(),

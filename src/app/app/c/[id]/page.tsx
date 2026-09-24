@@ -14,7 +14,7 @@ export default async function BoardPage({ params }: { params: Promise<{ id: stri
   const [payers, origin] = await Promise.all([listPayers(supabase, id), publicOrigin()]);
   return (
     <main className="flex flex-col gap-4">
-      <h1 className="text-2xl font-bold">{collection.title}</h1>
+      <h1 className="flex items-center gap-2 text-2xl font-bold">{collection.title}{collection.kind === "business" && <span className="pill bg-sky-100 text-sky-800" data-testid="kind">Business</span>}</h1>
       <Board collection={collection} initialPayers={payers} origin={origin} />
     </main>
   );

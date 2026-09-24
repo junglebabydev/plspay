@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Profile = { id: string; display_name: string; paynow_type: "mobile" | "uen"; paynow_id: string; whatsapp: string | null };
 export type Collection = {
-  id: string; title: string; payee_name: string; paynow_type: "mobile" | "uen"; paynow_id: string;
+  id: string; title: string; kind: "personal" | "business"; payee_name: string; paynow_type: "mobile" | "uen"; paynow_id: string;
   status: "open" | "closed"; expires_at: string; created_at: string; closed_at: string | null;
 };
 export type Payer = {

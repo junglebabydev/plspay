@@ -3,13 +3,14 @@ import { useMemo, useState, useTransition } from "react";
 import { createCollection } from "./actions";
 import { equalShares, makeReferences, makeUnique } from "@/lib/split";
 import { formatSGD, parseAmountToCents } from "@/lib/money";
-import { EXPIRY_DAYS, MAX_PAYERS, type ExpiryDays } from "@/lib/validate";
+import { EXPIRY_DAYS, MAX_PAYERS, type CollectionKind, type ExpiryDays } from "@/lib/validate";
 
 type Row = { first_name: string; whatsapp: string; amount: string };
 const emptyRow = (): Row => ({ first_name: "", whatsapp: "", amount: "" });
 
 export function NewCollectionForm() {
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<CollectionKind>("personal");
   const [mode, setMode] = useState<"split" | "custom">("split");
   const [total, setTotal] = useState("");
   const [includeOrganiser, setIncludeOrganiser] = useState(false);
@@ -42,6 +43,7 @@ export function NewCollectionForm() {
     setError(null);
     const payload = {
       title: title.trim(),
+      kind,
       mode,
       total_cents: mode === "split" ? parseAmountToCents(total) ?? 0 : undefined,
       include_organiser: includeOrganiser,
@@ -71,6 +73,15 @@ export function NewCollectionForm() {
           <label htmlFor="title" className="label">Title</label>
           <input id="title" className="input" maxLength={40} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Friday dinner" />
         </div>
+
+        <fieldset>
+          <legend className="label">What is this for?</legend>
+          <div className="flex gap-4 text-sm">
+            <label className="flex items-center gap-2"><input type="radio" name="kind" checked={kind === "personal"} onChange={() => setKind("personal")} /> Personal</label>
+            <label className="flex items-center gap-2"><input type="radio" name="kind" checked={kind === "business"} onChange={() => setKind("business")} /> Business receipt</label>
+          </div>
+          <p className="mt-1 text-xs text-stone-500">{kind === "business" ? "Fees, sales or bookings you collect as a business. Shown as a Business label on your board." : "Splitting a bill or collecting from friends."}</p>
+        </fieldset>
 
         <fieldset>
           <legend className="label">How to work out amounts</legend>

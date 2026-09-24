@@ -32,7 +32,7 @@ export async function createCollection(raw: unknown): Promise<CreateResult> {
   const expiresAt = new Date(Date.now() + c.expiry_days * 24 * 3600 * 1000).toISOString(); // AC-F03-07
   const { data: created, error: cErr } = await supabase
     .from("collections")
-    .insert({ title: c.title, expires_at: expiresAt })
+    .insert({ title: c.title, kind: c.kind, expires_at: expiresAt }) // AC-F03-09
     .select("id")
     .single();
   if (cErr || !created) {

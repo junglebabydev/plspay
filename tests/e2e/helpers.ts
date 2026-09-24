@@ -38,9 +38,10 @@ export async function ensureProfile(page: Page, displayName = "E2E Organiser") {
 export type NewPayer = { name: string; whatsapp?: string; amount?: string };
 
 /** Creates a collection through the UI and returns its id. */
-export async function createCollection(page: Page, opts: { title: string; mode?: "split" | "custom"; total?: string; payers: NewPayer[]; includeOrganiser?: boolean }): Promise<string> {
+export async function createCollection(page: Page, opts: { title: string; kind?: "personal" | "business"; mode?: "split" | "custom"; total?: string; payers: NewPayer[]; includeOrganiser?: boolean }): Promise<string> {
   await page.goto("/app/new");
   await page.getByLabel("Title").fill(opts.title);
+  if (opts.kind === "business") await page.getByLabel("Business receipt").check();
   const mode = opts.mode ?? "split";
   await page.getByLabel(mode === "split" ? "Split a total" : "Set each amount").check();
   if (mode === "split") {

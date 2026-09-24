@@ -34,7 +34,7 @@ Source of truth: `supabase/migrations/0001_init.sql`.
 | Table | Key fields | Notes |
 |---|---|---|
 | `profiles` | `id` (= auth user), `display_name`, `paynow_type`, `paynow_id`, `whatsapp` | One per organiser |
-| `collections` | `owner_id`, `title`, `payee_name`, `paynow_type`, `paynow_id`, `status`, `expires_at` | PayNow fields copied from profile at insert by trigger. Immutable after |
+| `collections` | `owner_id`, `title`, `kind`, `payee_name`, `paynow_type`, `paynow_id`, `status`, `expires_at` | PayNow fields copied from profile at insert by trigger. Immutable after. `kind` is `personal` (default) or `business` (`0004_collection_kind.sql`) |
 | `payers` | `collection_id`, `owner_id`, `first_name`, `whatsapp`, `amount_cents`, `reference`, `token`, `status`, `revoked` | `token` is 144-bit random, server generated. `owner_id` set by trigger |
 
 Constraints: amounts unique per collection, references unique per collection, tokens unique globally, status in `waiting | claimed | paid`.

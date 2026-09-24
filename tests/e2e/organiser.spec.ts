@@ -65,6 +65,20 @@ test.describe("F03 create", () => {
     await expect(page.getByTestId("extra-cents")).toContainText("Adds S$0.03");
   });
 
+  test("AC-F03-09 AC-F05-06 personal is preselected; a business collection is labelled on board and list", async ({ page }) => {
+    await page.goto("/app/new");
+    await expect(page.getByLabel("Personal")).toBeChecked();
+    await expect(page.getByLabel("Business receipt")).not.toBeChecked();
+    const id = await createCollection(page, { title: "Yoga fees", kind: "business", total: "60", payers: [{ name: "Priya" }, { name: "Ravi" }] });
+    await expect(page.getByTestId("kind")).toHaveText("Business");
+    await page.goto("/app");
+    const row = page.getByRole("link", { name: /Yoga fees/ }).first();
+    await expect(row).toContainText("Business");
+    const personal = await createCollection(page, { title: "Personal one", total: "10", payers: [{ name: "Tan" }] });
+    await expect(page.getByTestId("kind")).toHaveCount(0);
+    expect(personal).not.toBe(id);
+  });
+
   test("AC-F03-08 blocks more than 50 payers", async ({ page }) => {
     await page.goto("/app/new");
     const add = page.getByRole("button", { name: "Add payer" });

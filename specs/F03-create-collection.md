@@ -10,3 +10,4 @@
 - **AC-F03-06** Given creation succeeds, then the collection copies payee name and PayNow details from the profile and each payer gets a unique token.
 - **AC-F03-07** Given a collection is created, then it expires in 30 days by default. The organiser can pick 7, 30 or 90.
 - **AC-F03-08** Given 0 payers or more than 50, then creation is blocked with a clear message.
+- **AC-F03-09** Given the New collection form, then the organiser chooses whether the collection is "Personal" or a "Business receipt" before creating. Personal is preselected. The choice is saved on the collection as `kind` (`personal` | `business`) and nothing else about the collection changes.

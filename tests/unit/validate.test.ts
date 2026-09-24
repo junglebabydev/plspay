@@ -39,7 +39,15 @@ describe("Profile", () => {
 
 describe("New collection input", () => {
   const payer = (first_name: string, amount_cents?: number) => ({ first_name, whatsapp: "", amount_cents });
-  const split = { title: "Dinner", mode: "split", total_cents: 10000, include_organiser: false, expiry_days: 30, payers: [payer("A"), payer("B")] };
+  const split = { title: "Dinner", kind: "personal", mode: "split", total_cents: 10000, include_organiser: false, expiry_days: 30, payers: [payer("A"), payer("B")] };
+
+  it("AC-F03-09 kind must be personal or business", () => {
+    expect(newCollectionSchema.safeParse({ ...split, kind: "business" }).data?.kind).toBe("business");
+    const r = newCollectionSchema.safeParse({ ...split, kind: "charity" });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(firstIssue(r.error)).toBe("Choose Personal or Business receipt");
+    expect(newCollectionSchema.safeParse({ ...split, kind: undefined }).success).toBe(false);
+  });
 
   it("AC-F03-02 custom mode needs an amount above S$0.00 for every payer", () => {
     const r = newCollectionSchema.safeParse({ ...split, mode: "custom", payers: [payer("A", 500), payer("B", 0)] });

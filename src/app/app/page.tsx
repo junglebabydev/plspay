@@ -29,7 +29,7 @@ export default async function Collections() {
               <li key={c.id}>
                 <Link href={`/app/c/${c.id}`} className="card flex items-center justify-between hover:bg-stone-50">
                   <div>
-                    <p className="font-semibold">{c.title}</p>
+                    <p className="font-semibold">{c.title} {c.kind === "business" && <span className="pill ml-1 bg-sky-100 text-sky-800 align-middle">Business</span>}</p>
                     <p className="text-sm text-stone-600">{n.paid} of {n.total} paid</p>
                   </div>
                   <span className={`pill ${label === "Open" ? "bg-emerald-100 text-emerald-800" : "bg-stone-200 text-stone-700"}`}>{label}</span>
