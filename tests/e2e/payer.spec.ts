@@ -5,6 +5,7 @@ import { decodeQrDataUrl, parseTlv } from "../helpers/qr-decode";
 import { ipFor } from "./helpers";
 
 const VALID = "/p/e2e_valid_token_0000000";
+const TRANSFER = "Can't scan? Pay by PayNow transfer";
 const GONE = "This link no longer works. Ask the person collecting for a new one.";
 
 test.use({
@@ -17,7 +18,7 @@ test("AC-F04-01 shows title, amount, payee, reference and a PayNow QR", async ({
   await expect(page.getByRole("heading", { name: "Dinner" })).toBeVisible();
   await expect(page.getByTestId("amount")).toHaveText("S$25.00");
   await expect(page.getByText("E2E Organiser").first()).toBeVisible();
-  await expect(page.getByText("DINN-PRIYA")).toBeVisible();
+  await expect(page.getByText("DINN-PRIYA").first()).toBeVisible();
   await expect(page.getByAltText("PayNow QR code")).toBeVisible();
 });
 
@@ -66,6 +67,7 @@ test("AC-F04-05 offers Save QR and copy PayNow ID, amount and reference", async 
   await expect(save).toBeVisible();
   expect(await save.getAttribute("download")).toBe("paynow-DINN-PRIYA.png");
   expect((await save.getAttribute("href"))!.startsWith("data:image/png;base64,")).toBe(true);
+  await page.getByText(TRANSFER).click();
   for (const name of ["Copy PayNow ID", "Copy amount", "Copy reference"]) await expect(page.getByRole("button", { name })).toBeVisible();
 });
 
@@ -102,4 +104,27 @@ test("SEC-07 security headers are present on the payer page", async ({ page }) =
   expect(h["x-frame-options"]).toBe("DENY");
   expect(h["referrer-policy"]).toBe("no-referrer");
   expect(h["x-content-type-options"]).toBe("nosniff");
+});
+
+test("AC-F04-10 collapsed PayNow transfer steps with a Copy button per value", async ({ page, context }, testInfo) => {
+  await page.goto(VALID);
+  const steps = page.getByTestId("transfer-steps").getByRole("listitem");
+  await expect(steps.first()).toBeHidden(); // collapsed by default
+  await page.getByText(TRANSFER).click();
+  await expect(steps).toHaveCount(6);
+  await expect(steps.nth(0)).toContainText("PayNow transfer");
+  await expect(steps.nth(1)).toContainText("Mobile");
+  await expect(steps.nth(2)).toContainText("91234567");
+  await expect(steps.nth(3)).toContainText("E2E Organiser");
+  await expect(steps.nth(4)).toContainText("25.00");
+  await expect(steps.nth(5)).toContainText("DINN-PRIYA");
+  await expect(steps.nth(2).getByRole("button", { name: "Copy PayNow ID" })).toBeVisible();
+  await expect(steps.nth(4).getByRole("button", { name: "Copy amount" })).toBeVisible();
+  await expect(steps.nth(5).getByRole("button", { name: "Copy reference" })).toBeVisible();
+  await expect(page.getByTestId("transfer-steps")).not.toContainText("Priya"); // SEC-06: no payer name
+  if (testInfo.project.name === "android") { // clipboard read is only grantable in Chromium
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await steps.nth(4).getByRole("button", { name: "Copy amount" }).click();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("25.00");
+  }
 });

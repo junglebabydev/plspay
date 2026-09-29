@@ -51,9 +51,10 @@ export default async function PayerPage({ params }: { params: Promise<{ token: s
           <div className="flex justify-between border-t border-stone-100 py-2"><dt className="text-stone-600">Amount</dt><dd className="font-mono">{amountText}</dd></div>
         </dl>
         <p className="text-xs text-stone-500">Open your bank app, scan or upload this QR. The amount and reference are locked so the organiser can match your payment.</p>
+        <a className="btn-secondary w-full" href={qr.dataUrl} download={`paynow-${payment.reference}.png`}>Save QR</a>
       </div>
 
-      <PayerActions token={token} paynowId={payment.paynow_id} amountText={amountText} reference={payment.reference} initialStatus={payment.status} qrDataUrl={qr.dataUrl} payeeName={payment.payee_name} />
+      <PayerActions token={token} paynowType={payment.paynow_type} paynowId={payment.paynow_id} amountText={amountText} reference={payment.reference} initialStatus={payment.status} payeeName={payment.payee_name} />
 
       <Link href="/privacy" className="text-center text-xs text-stone-500 underline">Privacy notice</Link>
     </main>
