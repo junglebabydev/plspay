@@ -60,7 +60,7 @@ jobs:
         with: { node-version: 20 }
       - name: Release gate, no pending acceptance tests
         run: node scripts/check-traceability.mjs --strict
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with: { version: latest }
       - name: Migrate Supabase cloud (before app)
         env:
