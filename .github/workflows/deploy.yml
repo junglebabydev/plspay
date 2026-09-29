@@ -56,7 +56,7 @@ jobs:
     environment: production   # set required reviewers in repo settings
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: 20 }
       - name: Release gate, no pending acceptance tests
         run: node scripts/check-traceability.mjs --strict
