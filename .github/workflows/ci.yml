@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
-        with: { version: ${{ env.SUPABASE_CLI_VERSION }} }
+        with: { version: "${{ env.SUPABASE_CLI_VERSION }}" }
       - run: cp supabase/.env.example supabase/.env   # placeholder Twilio values; test OTPs never send
       - run: supabase start
       - run: supabase db reset          # applies migrations + seed from scratch
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
       - uses: supabase/setup-cli@v1
-        with: { version: ${{ env.SUPABASE_CLI_VERSION }} }
+        with: { version: "${{ env.SUPABASE_CLI_VERSION }}" }
       - run: npm ci
       - run: cp supabase/.env.example supabase/.env
       - run: supabase start
