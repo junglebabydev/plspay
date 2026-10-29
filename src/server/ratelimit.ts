@@ -12,7 +12,7 @@ const RULES: Record<LimitName, { points: number; duration: number }> = {
   signinIp: { points: 10, duration: 600 },      // sign-in attempts per IP
 };
 
-export const RATE_LIMIT_PREFIX = "plspay:rl";
+const RATE_LIMIT_PREFIX = "plspay:rl";
 
 declare global {
   // Shared across the proxy and route bundles, which load this module separately.

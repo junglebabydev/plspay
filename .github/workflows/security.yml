@@ -55,7 +55,7 @@ jobs:
           # CLAUDE.md rule 3: the app never signs in as a PocketBase superuser.
           if grep -rn "_superusers" src; then echo "superuser API referenced in src/"; fail=1; fi
           # No PocketBase client in client components.
-          for f in $(grep -rl '"use client"' src); do
+          while IFS= read -r f; do
             if grep -n 'from "pocketbase"' "$f"; then echo "PocketBase imported in client component $f"; fail=1; fi
-          done
+          done < <(grep -rl '"use client"' src)
           exit $fail
