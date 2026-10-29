@@ -1,15 +1,12 @@
 name: CI
 on:
   pull_request:
-  workflow_call:   # deploy.yml runs CI before every deploy
+  push:
+    branches: [main]   # Coolify deploys main on push; this checks what it deployed
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
-
-env:
-  # Pinned: the same CLI version as package.json devDependencies and docs/SPEC.md section 9.
-  SUPABASE_CLI_VERSION: 2.117.0
 
 jobs:
   check:
@@ -18,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run lint
       - run: npx next typegen
@@ -26,43 +23,38 @@ jobs:
       - run: npm test -- --reporter=verbose
       - run: npm run trace
 
-  db:
-    name: Database security tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
-        with: { version: "${{ env.SUPABASE_CLI_VERSION }}" }
-      - run: cp supabase/.env.example supabase/.env   # placeholder Twilio values; test OTPs never send
-      - run: supabase start
-      - run: supabase db reset          # applies migrations + seed from scratch
-      - run: supabase test db           # pgTAP: RLS, RPCs, retention, reissue
-      - name: Fail if any public table lacks RLS (SEC-01)
-        run: |
-          n=$(psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -tAc \
-            "select count(*) from pg_tables where schemaname='public' and not rowsecurity")
-          test "$n" = "0"
-
-  e2e:
-    name: End-to-end
-    needs: [check, db]
+  backend:
+    name: Backend rule tests (PocketBase)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
-      - uses: supabase/setup-cli@v1
-        with: { version: "${{ env.SUPABASE_CLI_VERSION }}" }
+        with: { node-version: 22, cache: npm }
       - run: npm ci
-      - run: cp supabase/.env.example supabase/.env
-      - run: supabase start
-      - run: supabase db reset
-      - name: Export local Supabase env for the app
-        run: scripts/supabase-env.sh >> "$GITHUB_ENV"
-      - run: docker run -d -p 127.0.0.1:6379:6379 redis:7-alpine
+      - uses: actions/cache@v4
+        with:
+          path: .cache/pocketbase
+          key: pocketbase-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/pb-test.mjs') }}
+      # The pinned PocketBase binary (sha256-checked), a fresh data dir, every migration from scratch,
+      # then the access-rule, hook and route tests in tests/backend.
+      - run: npm run test:db -- --reporter=verbose
+
+  e2e:
+    name: End-to-end
+    needs: [check, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - uses: actions/cache@v4
+        with:
+          path: .cache/pocketbase
+          key: pocketbase-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/pb-test.mjs') }}
       - run: npx playwright install --with-deps chromium webkit
       - run: npm run build
-      - run: npm run test:e2e
+      - run: npm run test:e2e:pb   # throwaway PocketBase; global-setup seeds accounts and fixtures
       - uses: actions/upload-artifact@v4
         if: failure()
         with: { name: playwright-report, path: playwright-report, retention-days: 7 }

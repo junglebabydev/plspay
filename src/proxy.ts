@@ -1,6 +1,5 @@
-// Runs on every request: per-request CSP nonce (SEC-07), payer rate limit (SEC-03), session refresh for /app.
+// Runs on every request: per-request CSP nonce (SEC-07), payer rate limit (SEC-03).
 import { NextResponse, type NextRequest } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import { consume } from "@/server/ratelimit";
 import { clientIp } from "@/server/ip";
 
@@ -43,26 +42,7 @@ export async function proxy(request: NextRequest) {
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", policy);
 
-  let response = NextResponse.next({ request: { headers: requestHeaders } });
-
-  if (pathname.startsWith("/app")) {
-    // Refresh the organiser session cookie so Server Components (which cannot write cookies) see a live token.
-    const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_ANON_KEY;
-    if (url && key) {
-      const supabase = createServerClient(url, key, {
-        cookies: {
-          getAll: () => request.cookies.getAll(),
-          setAll: (list) => {
-            for (const { name, value } of list) request.cookies.set(name, value);
-            response = NextResponse.next({ request: { headers: requestHeaders } });
-            for (const { name, value, options } of list) response.cookies.set(name, value, options);
-          },
-        },
-      });
-      await supabase.auth.getUser();
-    }
-  }
-
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("Content-Security-Policy", policy);
   if (pathname.startsWith("/p/") || pathname.startsWith("/app")) response.headers.set("Cache-Control", "no-store");
   return response;

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Every AC-/SEC- ID in specs/ and docs/SPEC.md must appear in at least one test.
+// Every AC-/SEC- ID in specs/ and docs/SPEC.md must appear in at least one test under tests/.
+// IDs listed under a "## Retired" heading no longer apply and need no test (tests naming them fail as orphans).
 // --strict also fails on tests marked fixme/skip (used before production deploy).
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -9,9 +10,10 @@ const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return
 const ID = /\b(?:AC-F\d{2}-\d{2}|SEC-\d{2})\b/g;
 
 const specFiles = [...walk("specs"), "docs/SPEC.md"];
-const required = new Set(specFiles.flatMap((f) => readFileSync(f, "utf8").match(ID) ?? []));
+const active = (text) => text.split(/^## Retired\b/m)[0];
+const required = new Set(specFiles.flatMap((f) => active(readFileSync(f, "utf8")).match(ID) ?? []));
 
-const testFiles = [...walk("tests"), ...walk("supabase/tests")].filter((f) => /\.(ts|sql)$/.test(f));
+const testFiles = walk("tests").filter((f) => /\.ts$/.test(f));
 const covered = new Map(); // id -> "proven" | "pending"
 for (const f of testFiles) {
   for (const line of readFileSync(f, "utf8").split("\n")) {
@@ -26,8 +28,8 @@ const enforcedElsewhere = {
   "SEC-07": "next.config headers + e2e",
   "SEC-08": "gitleaks in security.yml",
   "SEC-09": "dependency review + audit",
-  "SEC-10": "scripts/check-exposure.sh + smoke test in deploy.yml",
-  "SEC-11": "scripts/backup.sh before every deploy + nightly launchd",
+  "SEC-10": "Cloudflare Access on *-api.usestack.ai (infra repo) + superusers_path.pb.js, tested in tests/backend/auth.test.ts",
+  "SEC-11": "backend/pb_hooks/settings_from_env.pb.js + backups.pb.js (PocketBase backups to R2)",
 };
 
 const missing = [...required].filter((id) => !covered.has(id) && !enforcedElsewhere[id]).sort();

@@ -7,6 +7,6 @@
 ## Checklist
 - [ ] Spec updated first if behaviour changed
 - [ ] Tests name the AC IDs they prove
-- [ ] No RLS weakened, no grants to anon
+- [ ] No collection rule loosened; anonymous access only through the payer routes
 - [ ] No tokens, names or phone numbers logged
 - [ ] Payer-facing change checked on a phone via the preview link

@@ -13,7 +13,7 @@ export default async function Home() {
         </p>
       </div>
       <div className="flex flex-col gap-3">
-        <Link href={user ? "/app" : "/signin"} className="btn-primary">{user ? "Open my collections" : "Sign in with your mobile number"}</Link>
+        <Link href={user ? "/app" : "/signin"} className="btn-primary">{user ? "Open my collections" : "Sign in"}</Link>
         <Link href="/privacy" className="text-center text-sm text-stone-500 underline">Privacy notice</Link>
       </div>
     </main>

@@ -1,0 +1,9 @@
+# Keep local data, secrets and editor junk out of the build context.
+pb_data
+pb_public
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.git

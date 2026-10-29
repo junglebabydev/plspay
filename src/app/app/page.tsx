@@ -1,15 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createSessionClient } from "@/server/supabase";
+import { createSessionClient } from "@/server/pb";
 import { getProfile, listCollections, payerCounts } from "@/server/data";
 
 export const metadata = { title: "Collections" };
 
 export default async function Collections() {
-  const supabase = await createSessionClient();
-  const profile = await getProfile(supabase);
+  const pb = await createSessionClient();
+  const profile = await getProfile(pb);
   if (!profile) redirect("/app/profile?first=1"); // AC-F02-01
-  const [collections, counts] = await Promise.all([listCollections(supabase), payerCounts(supabase)]);
+  const [collections, counts] = await Promise.all([listCollections(pb), payerCounts(pb)]);
 
   return (
     <main className="flex flex-col gap-4">

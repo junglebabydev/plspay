@@ -1,0 +1,35 @@
+# LOCAL DEV ONLY: the PocketBase backend. The Next.js app runs on the host with `npm run dev`.
+# Production runs as two Coolify apps from this repo: nixpacks at the root (frontend) and
+# Dockerfile in backend/ (see docs/MAC-MINI.md).
+#
+#   docker compose up -d --build     # http://localhost:8090/_/ (PocketBase admin)
+#   ./scripts/dev-seed.sh            # local superuser + organisers A and B, passwords in ./.env.seed
+#   npm run dev                      # http://localhost:3000 (needs .env.local, see .env.example)
+#
+# Port 8090 in use? BACKEND_PORT=8890 docker compose up -d --build, and set
+# PB_INTERNAL_URL=http://localhost:8890 in .env.local (or put BACKEND_PORT in a root .env
+# file, which compose reads and git ignores).
+
+services:
+  backend:
+    build: ./backend
+    environment:
+      # Schema edits in the local admin UI write migration files to
+      # ./backend/pb_migrations (bind-mounted below), so they land in git.
+      PB_AUTOMIGRATE: "true"
+      PB_HIDE_CONTROLS: "false"
+      PB_APP_NAME: plspay
+      PB_APP_URL: http://localhost:${BACKEND_PORT:-8090}
+      # No PB_BACKUP_S3_* locally: automatic backups stay off.
+    ports:
+      # Loopback only: PocketBase trusts the CF-Connecting-IP header, so it must
+      # not be reachable from the LAN.
+      - "127.0.0.1:${BACKEND_PORT:-8090}:8090"
+    volumes:
+      - pb_data:/pb/pb_data
+      - ./backend/pb_migrations:/pb/pb_migrations
+      - ./backend/pb_hooks:/pb/pb_hooks # hook edits restart PocketBase automatically
+    mem_limit: 512m # same as production
+
+volumes:
+  pb_data: # local database; `docker compose down -v` deletes it

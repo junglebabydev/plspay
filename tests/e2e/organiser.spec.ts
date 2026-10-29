@@ -1,6 +1,7 @@
 // F02, F03, F05, F06: organiser flows. Runs with the session saved by auth.setup.ts.
 import { test, expect, type Browser } from "@playwright/test";
-import { boardStatus, createCollection, ipFor, phoneFor, signIn } from "./helpers";
+import { accounts } from "./accounts";
+import { accountFor, boardStatus, createCollection, ipFor, signIn } from "./helpers";
 
 test.use({ extraHTTPHeaders: async ({}, provide, testInfo) => { await provide({ "x-forwarded-for": ipFor(testInfo) }); } });
 
@@ -12,9 +13,9 @@ async function anonymousContext(browser: Browser, ip: string) {
 
 test.describe("F02 profile", () => {
   test("AC-F02-01 a new organiser must save a profile before creating a collection", async ({ browser }, testInfo) => {
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "0");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 10));
     const page = await ctx.newPage();
-    await signIn(page, phoneFor(testInfo, 3));
+    await signIn(page, accountFor(testInfo, "fresh"));
     await expect(page).toHaveURL(/\/app\/profile/);
     await page.goto("/app/new");
     await expect(page).toHaveURL(/\/app\/profile/);
@@ -31,6 +32,35 @@ test.describe("F02 profile", () => {
     await page.getByRole("textbox", { name: "PayNow UEN" }).fill("2019-12345K");
     await page.getByRole("button", { name: "Save profile" }).click();
     await expect(page.getByText("UEN must be 9 or 10 letters and digits")).toBeVisible();
+  });
+
+  test("AC-F02-03 SEC-05 changing PayNow details asks for the password, and a wrong one changes nothing", async ({ browser }, testInfo) => {
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 10));
+    const page = await ctx.newPage();
+    await signIn(page, accountFor(testInfo, "paynow"));
+    await page.goto("/app/profile");
+    const id = page.getByRole("textbox", { name: "PayNow mobile number" });
+    await expect(id).toHaveValue("91234567");
+    await page.getByLabel("Display name").fill("Renamed");
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await expect(page.getByText("Profile saved")).toBeVisible(); // no password for the name alone
+    await id.fill("82345678");
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await expect(page.getByText("To change PayNow details, enter your password.")).toBeVisible();
+    await expect(id).toHaveValue("82345678"); // the new number survives the prompt
+    await page.getByLabel("Password").fill("not-the-password");
+    await page.getByRole("button", { name: "Confirm and save" }).click();
+    await expect(page.getByText("That password didn't work")).toBeVisible();
+    await page.reload();
+    await expect(id).toHaveValue("91234567");
+    await id.fill("82345678");
+    await page.getByRole("button", { name: "Save profile" }).click();
+    await page.getByLabel("Password").fill(accounts().password);
+    await page.getByRole("button", { name: "Confirm and save" }).click();
+    await expect(page.getByText("Profile saved")).toBeVisible();
+    await page.reload();
+    await expect(id).toHaveValue("82345678");
+    await ctx.close();
   });
 });
 
@@ -118,7 +148,7 @@ test.describe("F05 board and F06 lifecycle", () => {
   test("AC-F05-04 AC-F04-07 a payer's claim shows as Says paid within 10 seconds without a reload", async ({ page, browser }, testInfo) => {
     const id = await createCollection(page, { title: "Live", total: "30", payers: [{ name: "Priya" }] });
     const { payers } = await boardStatus(page, id);
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "1");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 1));
     const payer = await ctx.newPage();
     await payer.goto(`/p/${payers[0]!.token}`);
     await payer.getByRole("button", { name: "I've paid" }).click();
@@ -147,7 +177,7 @@ test.describe("F05 board and F06 lifecycle", () => {
   test("AC-F06-01 AC-F06-05 revoke kills the link at once and a new link gets a new token", async ({ page, browser }, testInfo) => {
     const id = await createCollection(page, { title: "Revoke", total: "10", payers: [{ name: "Priya" }] });
     const before = (await boardStatus(page, id)).payers[0]!;
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "2");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 2));
     const payer = await ctx.newPage();
     await payer.goto(`/p/${before.token}`);
     await expect(payer.getByTestId("amount")).toHaveText("S$10.00");
@@ -174,7 +204,7 @@ test.describe("F05 board and F06 lifecycle", () => {
     const { payers } = await boardStatus(page, id);
     await page.getByRole("button", { name: "Close collection" }).click();
     await expect(page.getByText("Closed")).toBeVisible();
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "3");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 3));
     const payer = await ctx.newPage();
     for (const p of payers) {
       await payer.goto(`/p/${p.token}`);
@@ -190,7 +220,7 @@ test.describe("F05 board and F06 lifecycle", () => {
     await page.getByRole("button", { name: "Yes, delete" }).click();
     await expect(page).toHaveURL(/\/app$/);
     expect((await page.request.get(`/app/c/${id}/status`)).status()).toBe(404);
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "4");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 4));
     const payer = await ctx.newPage();
     const res = await payer.goto(`/p/${payers[0]!.token}`);
     expect(res!.status()).toBe(404);
@@ -200,9 +230,9 @@ test.describe("F05 board and F06 lifecycle", () => {
 
   test("AC-F05-03 AC-F02-05 another organiser gets 404 and zero rows for a board that is not theirs", async ({ page, browser }, testInfo) => {
     const id = await createCollection(page, { title: "Private", total: "10", payers: [{ name: "Priya" }] });
-    const ctx = await anonymousContext(browser, ipFor(testInfo) + "5");
+    const ctx = await anonymousContext(browser, ipFor(testInfo, 5));
     const other = await ctx.newPage();
-    await signIn(other, phoneFor(testInfo, 4));
+    await signIn(other, accountFor(testInfo, "other"));
     await other.waitForLoadState("networkidle"); // a new organiser is redirected on to the profile page
     const res = await other.request.get(`/app/c/${id}`);
     expect(res.status()).toBe(404);

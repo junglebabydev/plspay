@@ -1,12 +1,9 @@
 import "server-only";
 import { redirect } from "next/navigation";
-import type { User } from "@supabase/supabase-js";
-import { createSessionClient } from "./supabase";
+import { createSessionClient, getCurrentUser, type User } from "./pb";
 
 export async function getUser(): Promise<User | null> {
-  const supabase = await createSessionClient();
-  const { data } = await supabase.auth.getUser();
-  return data.user ?? null;
+  return getCurrentUser(await createSessionClient());
 }
 
 /** AC-F01-05: every /app route needs a session. */

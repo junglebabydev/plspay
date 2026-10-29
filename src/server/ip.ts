@@ -1,6 +1,9 @@
 // Client IP for rate limiting. Behind Cloudflare Tunnel the connecting IP is in cf-connecting-ip,
-// on Vercel in x-real-ip. Both proxies overwrite these headers, so they cannot be spoofed from outside.
-// x-forwarded-for is taken from its LAST entry: proxies append the real address after client-supplied ones.
+// which Cloudflare overwrites, so it cannot be spoofed from outside (nothing but cloudflared can reach
+// the server: docs/MAC-MINI.md). x-real-ip next. x-forwarded-for is taken from its LAST entry:
+// proxies append the real address after client-supplied ones.
+import { isIP } from "node:net";
+
 export function clientIp(headers: Headers): string {
   const cf = headers.get("cf-connecting-ip");
   if (cf) return cf.trim();
@@ -13,4 +16,13 @@ export function clientIp(headers: Headers): string {
     if (last) return last;
   }
   return "unknown";
+}
+
+/**
+ * The client IP to pass on to PocketBase as CF-Connecting-IP, or null. PocketBase ignores a value
+ * that isn't an IP and counts the request against the app server's own address instead, which
+ * would put every such visitor in one rate-limit bucket.
+ */
+export function forwardableIp(ip: string): string | null {
+  return isIP(ip) ? ip : null;
 }

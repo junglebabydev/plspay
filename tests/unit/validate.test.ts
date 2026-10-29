@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { normaliseSgPhone, profileSchema, newCollectionSchema, firstIssue } from "../../src/lib/validate";
+import { normaliseSgPhone, profileSchema, newCollectionSchema, signInSchema, firstIssue } from "../../src/lib/validate";
 
-describe("Phone normalisation", () => {
-  it("AC-F01-02 accepts Singapore mobiles in common formats and rejects everything else", () => {
+describe("Sign-in input", () => {
+  it("AC-F01-04 needs an email and a password; the email is trimmed and lower-cased", () => {
+    expect(signInSchema.safeParse({ email: " Alice@Example.COM ", password: "pw" }).data).toEqual({ email: "alice@example.com", password: "pw" });
+    expect(signInSchema.safeParse({ email: "not-an-email", password: "pw" }).success).toBe(false);
+    expect(signInSchema.safeParse({ email: "alice@example.com", password: "" }).success).toBe(false);
+  });
+});
+
+describe("WhatsApp number normalisation", () => {
+  it("AC-F05-05 accepts Singapore mobiles in common formats for wa.me links and rejects everything else", () => {
     expect(normaliseSgPhone("91234567")).toBe("+6591234567");
     expect(normaliseSgPhone("+65 9123 4567")).toBe("+6591234567");
     expect(normaliseSgPhone("6581234567")).toBe("+6581234567");

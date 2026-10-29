@@ -1,61 +1,63 @@
 "use server";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { ClientResponseError } from "pocketbase";
 import { requireUser } from "@/server/auth";
-import { createSessionClient } from "@/server/supabase";
+import { createSessionClient } from "@/server/pb";
 import { getProfile } from "@/server/data";
-import { consume } from "@/server/ratelimit";
-import { clientIp } from "@/server/ip";
-import { firstIssue, otpCodeSchema, profileSchema } from "@/lib/validate";
+import { firstIssue, profileSchema } from "@/lib/validate";
 
-export type ProfileState = { error?: string; needCode?: boolean; saved?: boolean };
+type ProfileValues = { display_name: string; paynow_type: string; paynow_id: string; whatsapp: string };
+// `values` echoes what was submitted: React resets the form after an action, and the fields
+// must keep the new PayNow details while the form asks for the password.
+export type ProfileState = { error?: string; needPassword?: boolean; saved?: boolean; values?: ProfileValues };
 
-const REAUTH_MESSAGE = "To change PayNow details, confirm with the code we just sent to your mobile.";
+const REAUTH_MESSAGE = "To change PayNow details, enter your password.";
+const SAVE_FAILED = "Couldn't save your profile. Check the details and try again.";
 
 /** AC-F02-01, AC-F02-02, AC-F02-03 (SEC-05) */
 export async function saveProfile(_prev: ProfileState, formData: FormData): Promise<ProfileState> {
   const user = await requireUser();
-  const parsed = profileSchema.safeParse({
-    display_name: formData.get("display_name") ?? "",
-    paynow_type: formData.get("paynow_type") ?? "mobile",
-    paynow_id: formData.get("paynow_id") ?? "",
-    whatsapp: formData.get("whatsapp") ?? "",
-  });
-  if (!parsed.success) return { error: firstIssue(parsed.error) };
-  const input = { ...parsed.data, whatsapp: parsed.data.whatsapp || null };
+  const values: ProfileValues = {
+    display_name: String(formData.get("display_name") ?? ""),
+    paynow_type: String(formData.get("paynow_type") ?? "mobile"),
+    paynow_id: String(formData.get("paynow_id") ?? ""),
+    whatsapp: String(formData.get("whatsapp") ?? ""),
+  };
+  const parsed = profileSchema.safeParse(values);
+  if (!parsed.success) return { error: firstIssue(parsed.error), values };
+  const input = parsed.data;
 
-  const supabase = await createSessionClient();
-  const existing = await getProfile(supabase);
+  const pb = await createSessionClient();
+  const existing = await getProfile(pb);
 
   if (!existing) {
-    const { error } = await supabase.from("profiles").insert({ id: user.id, ...input });
-    if (error) return { error: "Couldn't save your profile. Check the details and try again." };
+    try {
+      await pb.collection("profiles").create({ owner: user.id, ...input });
+    } catch {
+      return { error: SAVE_FAILED, values };
+    }
     redirect("/app");
   }
 
-  // Existing profile. If a code was supplied, verify it first: that refreshes the session's OTP timestamp.
-  const code = String(formData.get("code") ?? "").trim();
-  if (code) {
-    const parsedCode = otpCodeSchema.safeParse(code);
-    if (!parsedCode.success || !user.phone) return { error: "That code didn't work", needCode: true };
-    const phone = user.phone.startsWith("+") ? user.phone : `+${user.phone}`;
-    const { error } = await supabase.auth.verifyOtp({ phone, token: parsedCode.data, type: "sms" });
-    if (error) return { error: "That code didn't work", needCode: true };
+  // Name and WhatsApp save as they are. PayNow details change only through the backend route that
+  // checks the password on the same request; the generic update rule refuses them.
+  if (input.paynow_type === existing.paynow_type && input.paynow_id === existing.paynow_id) {
+    try {
+      await pb.collection("profiles").update(existing.id, { display_name: input.display_name, whatsapp: input.whatsapp });
+    } catch {
+      return { error: SAVE_FAILED, values };
+    }
+    return { saved: true, values };
   }
 
-  const { error } = await supabase.from("profiles").update(input).eq("id", user.id);
-  if (!error) return { saved: true };
-
-  if (error.message.includes("reauth_required")) {
-    if (!user.phone) return { error: "Sign out and in again, then change your PayNow details." };
-    const phone = user.phone.startsWith("+") ? user.phone : `+${user.phone}`;
-    const ip = clientIp(await headers());
-    const byPhone = await consume("otpPhone", phone);
-    const byIp = await consume("otpIp", ip);
-    if (!byPhone.ok || !byIp.ok) return { error: "Too many codes. Try again in a few minutes" };
-    const sent = await supabase.auth.signInWithOtp({ phone, options: { channel: "sms" } });
-    if (sent.error) return { error: "Couldn't send a code just now. Try again in a minute." };
-    return { needCode: true, error: REAUTH_MESSAGE };
+  const password = String(formData.get("password") ?? "");
+  if (!password) return { needPassword: true, error: REAUTH_MESSAGE, values };
+  try {
+    await pb.send("/api/plspay/profile", { method: "POST", body: { password, ...input } });
+  } catch (err) {
+    if (err instanceof ClientResponseError && err.status === 403) return { needPassword: true, error: "That password didn't work", values };
+    if (err instanceof ClientResponseError && err.status === 429) return { needPassword: true, error: "Too many attempts. Try again in a few minutes", values };
+    return { error: SAVE_FAILED, values };
   }
-  return { error: "Couldn't save your profile. Check the details and try again." };
+  return { saved: true, values };
 }

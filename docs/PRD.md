@@ -1,6 +1,6 @@
 # PRD: PlsPay v2
 
-Status: draft. Product name: PlsPay. Owner: Vaibhav. Builder: Claude Code, reviewed by Uraj.
+Status: draft, pre-launch (test data only). Product name: PlsPay. Owner: Vaibhav. Builder: Claude Code, reviewed by Uraj.
 
 ## 1. Problem
 
@@ -10,7 +10,7 @@ Existing tools (PayLah split, SplitNow, Gaodim, PayMeLah) generate QRs but track
 
 ## 2. Users
 
-1. **Organiser.** Collects from 2 to 50 people. Friends splitting a bill, group activity organisers, small merchants collecting fees. Has a PayNow mobile number or UEN.
+1. **Organiser.** Collects from 2 to 50 people. Friends splitting a bill, group activity organisers, small merchants collecting fees. Has a PayNow mobile number or UEN, and an organiser account set up by the PlsPay team.
 2. **Payer.** Receives a link on WhatsApp. Has any Singapore bank app. Will not install an app or sign up.
 
 ## 3. Goals
@@ -32,7 +32,7 @@ Existing tools (PayLah split, SplitNow, Gaodim, PayMeLah) generate QRs but track
 
 | ID | Feature | Spec |
 |---|---|---|
-| F01 | Organiser sign-in with phone OTP | `specs/F01-auth.md` |
+| F01 | Organiser sign-in with email and password (accounts created by an admin) | `specs/F01-auth.md` |
 | F02 | PayNow profile | `specs/F02-paynow-profile.md` |
 | F03 | Create a collection (split or custom amounts) | `specs/F03-create-collection.md` |
 | F04 | Payer page with PayNow QR | `specs/F04-payer-page.md` |
@@ -46,11 +46,12 @@ Existing tools (PayLah split, SplitNow, Gaodim, PayMeLah) generate QRs but track
 3. **Amount locked.** QR is non-editable.
 4. **Two-step status.** Payer can claim "I've paid". Only the organiser can confirm "Paid".
 5. **PayNow details frozen per collection.** Changing your PayNow number never changes existing links.
+6. **No public sign-up (2026-10-29).** An admin creates each organiser account in the backend admin. Organisers sign in with email and password. PlsPay sends no SMS and no email.
 
 ## 7. Rollout
 
-1. **Pilot.** Runs on a Mac mini with a local database, public through a Cloudflare Tunnel. Up to 20 organisers.
-2. **Cloud.** Move to Supabase cloud and Vercel once the pilot hits its metrics or the Mac mini becomes a reliability risk. Same code and migrations.
+1. **Pilot.** Runs on the Mac mini home server under Coolify: the Next.js app and its own PocketBase backend, public through a Cloudflare Tunnel. Up to 20 organisers. Until launch it holds test data only.
+2. **Cloud.** Move both containers to a cloud host once the pilot hits its metrics or the Mac mini becomes a reliability risk. Same code and migrations.
 
 ## 8. Success metrics (first 30 days, 20 organisers)
 
@@ -64,8 +65,8 @@ Existing tools (PayLah split, SplitNow, Gaodim, PayMeLah) generate QRs but track
 ## 9. Risks
 
 1. Banks may drop the reference from the receiver's alert. Mitigation: unique amounts are the primary identifier.
-2. OTP cost abuse. Mitigation: rate limits, see SPEC section 6.
+2. Password guessing on organiser accounts. Mitigation: per-IP sign-in limits, admin-set passwords, and the password asked again before PayNow details change. See SPEC section 6.
 3. PDPA: we store third-party names and phone numbers. Mitigation: minimal fields, 90-day retention, privacy notice.
 4. Phishing using our brand. Mitigation: server-held details, bank name check copy, links only on our domain.
-5. Pilot runs on one machine. A power cut or disk failure takes it down. Mitigation: nightly encrypted backups off the machine, UPS, move to cloud before any wider launch.
+5. Pilot runs on one machine. A power cut or disk failure takes it down. Mitigation: daily and weekly backups to Cloudflare R2, UPS, move to cloud before any wider launch.
 6. Name: PlsPay pending domain, IPOS trademark (classes 9, 36) and app store checks.

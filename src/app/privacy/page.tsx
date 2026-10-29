@@ -10,7 +10,7 @@ export default function Privacy() {
         <p>PlsPay helps an organiser collect PayNow payments from a group. We never receive, hold or move money. Payments go bank to bank.</p>
         <h2 className="font-semibold text-stone-900">What we store</h2>
         <ul className="list-disc space-y-1 pl-5">
-          <li>Organisers: mobile number (for sign-in), display name, PayNow mobile number or UEN, optional WhatsApp number.</li>
+          <li>Organisers: email address (for sign-in), display name, PayNow mobile number or UEN, optional WhatsApp number.</li>
           <li>Payers: first name, amount, payment reference, optional WhatsApp number, and whether they said they have paid.</li>
         </ul>
         <h2 className="font-semibold text-stone-900">Who can see it</h2>

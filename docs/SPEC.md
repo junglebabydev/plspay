@@ -4,58 +4,55 @@ Feature behaviour lives in `specs/`. This file covers everything cross-cutting. 
 
 ## 1. Architecture
 
-Two phases, same code, same migrations.
+Two containers on the Mac mini home server, deployed by Coolify from this repo, public through Cloudflare.
 
-**Phase 1, pilot on the Mac mini (now)**
 ```
-Phone ──https──> Cloudflare Tunnel ──> Mac mini
-                 (plspay domain)        ├─ Next.js :3000   (only thing exposed)
-                                        ├─ Supabase local  (Postgres, Auth) 127.0.0.1 only
-                                        └─ Redis :6379     (rate limits) 127.0.0.1 only
-```
-
-**Phase 2, cloud (later)**
-```
-Phone ──https──> Vercel (Next.js) ──server only──> Supabase cloud
-                        └── Upstash Redis
+Phone ──https──> Cloudflare ──Tunnel──> Mac mini (Coolify, project network "plspay")
+                                         ├─ Next.js :3000      https://plspay.usestack.ai      (repo root, nixpacks)
+                                         └─ PocketBase :8090   https://plspay-api.usestack.ai  (backend/, Dockerfile)
+                                              container plspay-pb, volume /pb/pb_data
+                                              /_/ and /api/collections/_superusers behind Cloudflare Access
 ```
 
-Rules that hold in both phases:
-1. **The browser never talks to Supabase.** All reads and writes go through Next.js server components, server actions or route handlers. No Supabase keys ship to the browser, no `NEXT_PUBLIC_SUPABASE_*` variables exist.
-2. Organiser requests run with the organiser's session (cookie, via `@supabase/ssr` on the server). Row-level security (RLS) decides what they see.
-3. Payer requests call security-definer RPCs with the service role, server side, after rate limiting.
-4. Rate limiting sits behind one interface, `src/server/ratelimit.ts`, backed by `REDIS_URL` (local Redis in pilot, Upstash in cloud). Client IP comes from `cf-connecting-ip` (tunnel), `x-real-ip` (Vercel) or the last `x-forwarded-for` hop.
+Rules:
+1. **The browser never talks to PocketBase.** All reads and writes go through Next.js server components, server actions or route handlers, which call PocketBase over the project's Docker network (`PB_INTERNAL_URL`). No PocketBase URL or token ships to the browser, and no `NEXT_PUBLIC_*` variables exist. The CSP's `connect-src 'self'` holds the browser to that.
+2. Organiser requests run with the organiser's PocketBase auth token, kept in an httpOnly cookie (`pb_auth`). The collection API rules decide what they see.
+3. Payer requests call two public PocketBase routes (`POST /api/plspay/payment` and `POST /api/plspay/claim`, in `backend/pb_hooks/plspay.pb.js`) with the opaque token, server side, after rate limiting. Next.js holds no superuser credential.
+4. Rate limiting sits behind one interface, `src/server/ratelimit.ts`, held in the app's memory (one container). PocketBase keeps its own per-IP limits behind it. Client IP comes from `cf-connecting-ip` (Cloudflare), `x-real-ip` or the last `x-forwarded-for` hop, and the app passes it on to PocketBase as `CF-Connecting-IP`, the header PocketBase trusts.
 5. Payer links are rate limited and given a CSP nonce in `src/proxy.ts`, which runs before every route.
+6. PocketBase's API is reachable from the internet (`plspay-api.usestack.ai`), so the collection rules and hooks are the security boundary, not the network. They must hold against direct calls, anonymous or with an organiser's own token.
 
 ## 2. Data model
 
-Source of truth: `supabase/migrations/0001_init.sql`.
+Source of truth: `backend/pb_migrations/1793340000_plspay_collections.js`. Server-set fields: `backend/pb_hooks/plspay.pb.js`.
 
-| Table | Key fields | Notes |
+| Collection | Key fields | Notes |
 |---|---|---|
-| `profiles` | `id` (= auth user), `display_name`, `paynow_type`, `paynow_id`, `whatsapp` | One per organiser |
-| `collections` | `owner_id`, `title`, `kind`, `payee_name`, `paynow_type`, `paynow_id`, `status`, `expires_at` | PayNow fields copied from profile at insert by trigger. Immutable after. `kind` is `personal` (default) or `business` (`0004_collection_kind.sql`) |
-| `payers` | `collection_id`, `owner_id`, `first_name`, `whatsapp`, `amount_cents`, `reference`, `token`, `status`, `revoked` | `token` is 144-bit random, server generated. `owner_id` set by trigger |
+| `users` | `email`, `password` | PocketBase auth collection. Created only by a superuser (no sign-up) |
+| `profiles` | `owner` (unique), `display_name`, `paynow_type`, `paynow_id`, `whatsapp` | One per organiser. PayNow ID format checked per type by a hook |
+| `collections` | `owner`, `title`, `kind`, `payee_name`, `paynow_type`, `paynow_id`, `status`, `expires_at`, `closed_at` | PayNow fields copied from the profile on create by a hook, immutable after. `kind` is `personal` (default) or `business`. `closed_at` stamped on close |
+| `payers` | `collection`, `owner`, `first_name`, `whatsapp`, `amount_cents`, `reference`, `token`, `status`, `revoked`, `claimed_at`, `paid_at` | `token` is 144-bit random, server generated. `owner` set from the collection by a hook |
 
-Constraints: amounts unique per collection, references unique per collection, tokens unique globally, status in `waiting | claimed | paid`.
+Constraints: amounts unique per collection, references unique per collection, tokens unique globally, status in `waiting | claimed | paid`. Deleting a collection deletes its payers; deleting an organiser deletes their profile, collections and payers.
 
 ## 3. Access rules (the security contract)
 
 | Actor | Can | Cannot |
 |---|---|---|
-| Organiser (signed in) | Read and write own profile, collections, payers | See any other organiser's data. Change PayNow fields on an existing collection |
+| Organiser (signed in) | Read and write own profile, collections, payers | See any other organiser's data. Change PayNow fields on an existing collection. Change their profile's PayNow details without their password. Sign up others, or delete their own account |
 | Payer (holds a token) | Read their own payment details. Set their own status to `claimed` | See other payers, totals, status of others, organiser phone. Set `paid` |
 | Anyone else | Nothing | Everything |
-| Service role | Only used server-side for the two payer RPCs | Never shipped to the browser |
+| Superuser | Create organiser accounts in the PocketBase admin, behind Cloudflare Access | Never used by the app |
 
-Each row is enforced in the database and proven by a test in `supabase/tests/`.
+Each row is enforced in PocketBase (collection rules and hooks) and proven by a test in `tests/backend/`, run against a real PocketBase by `npm run test:db`.
 
 ## 4. Payer token rules
 
-1. Generated in Postgres, 18 random bytes, base64url, 24 chars.
+1. Generated by the backend hook, 24 characters from the base64url alphabet (144 bits). Clients can't choose or change one.
 2. Valid only if payer not revoked, collection `open`, and `now() < expires_at`.
 3. Invalid, expired and revoked tokens return the same "link no longer works" page. No hint which case it is.
-4. Tokens never appear in logs. Strip `/p/*` paths from analytics.
+4. Tokens never appear in logs. The app sends them to PocketBase in POST bodies, never in URLs, because PocketBase logs request URLs. Strip `/p/*` paths from analytics.
+5. A revoked payer that is un-revoked always gets a new token (AC-F06-05). Otherwise a token never changes.
 
 ## 5. PayNow QR
 
@@ -76,22 +73,22 @@ Built by `src/lib/paynow.ts` (SGQR / EMVCo):
 
 | ID | Requirement |
 |---|---|
-| SEC-01 | RLS enabled on every table. CI fails if a table in `public` lacks RLS |
-| SEC-02 | Anon role has no grants on tables or RPCs |
-| SEC-03 | `/p/[token]` and `/api/claim`: 30 requests per IP per minute |
-| SEC-04 | OTP send: 3 per phone per 10 min, 10 per IP per hour. Singapore numbers only (+65) |
-| SEC-05 | Changing PayNow details requires an OTP verified in the last 5 minutes |
+| SEC-01 | Every collection's API rules require a signed-in owner. No rule is public (the empty string). The rule tests in `tests/backend/` fail otherwise |
+| SEC-02 | Anonymous requests get nothing from any collection: lists are empty, views are 404, writes are refused. The two payer routes are the only anonymous entry points, and each answers for one token only |
+| SEC-03 | `/p/[token]` and `/api/claim`: 30 requests per IP per minute (app). PocketBase's `/api/plspay/` routes: 60 per IP per minute, for direct calls that skip the app |
+| SEC-05 | Changing PayNow details requires the organiser's password, checked by PocketBase on that request (`POST /api/plspay/profile`, 5 per IP per minute). The generic update rule refuses PayNow changes, and a profile can't be deleted and re-created |
 | SEC-06 | Payer page HTML and Open Graph tags contain no payer name or phone |
 | SEC-07 | Security headers: CSP (self only, per-request nonce for Next's inline scripts, set in `src/proxy.ts`), HSTS, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` (static headers in `next.config.security.ts`) |
 | SEC-08 | No secrets in the repo. Gitleaks on every PR |
 | SEC-09 | Dependencies scanned weekly. High severity blocks merge |
-| SEC-10 | Pilot: Supabase (54321-54324), Postgres and Redis listen on 127.0.0.1 only. The tunnel exposes port 3000 and nothing else. Local Supabase uses publicly known default keys, so its API must never be reachable from outside the Mac mini |
-| SEC-11 | Pilot: nightly encrypted database backup, 14 days kept, restore tested monthly. FileVault on. No other services exposed on the Mac mini |
+| SEC-10 | PocketBase's admin UI (`/_/`) and superuser API (`/api/collections/_superusers`) are reachable only through Cloudflare Access, and superuser login refuses every other spelling of that path. The app holds no superuser credential. Locally, docker compose publishes PocketBase on 127.0.0.1 only |
+| SEC-11 | Daily (7 kept) and weekly (4 kept) PocketBase backups to a bucket of this project's own on Cloudflare R2, by the template's backup hooks. Restores: infra repo runbook |
+| SEC-12 | Sign-in: 10 attempts per IP per 10 minutes (app), on top of PocketBase's own limit of 2 per 3 seconds per IP. Either answers "Too many attempts. Try again in a few minutes". Failed sign-ins don't reveal whether the email has an account |
 
 ## 7. Privacy (PDPA)
 
 1. Store payer first name only. WhatsApp number optional.
-2. Delete collections and payers 90 days after close or expiry (`0002_retention.sql`).
+2. Delete collections and payers 90 days after close or expiry: PocketBase cron job `purge_old_collections`, daily at 19:15 UTC (03:15 SGT).
 3. Privacy notice linked on sign-in and payer page.
 4. Organiser can delete a collection at any time. Deletion is immediate and cascades.
 
@@ -100,27 +97,32 @@ Built by `src/lib/paynow.ts` (SGQR / EMVCo):
 | Area | Target |
 |---|---|
 | Payer page load | Under 1.5s on 4G, JS under 60KB |
-| Availability | Pilot: best effort, single machine, UPS recommended. Cloud: Vercel and Supabase defaults |
+| Availability | Best effort: one Mac mini. A backend deploy restarts PocketBase (a few seconds down) |
 | Browsers | iOS Safari 16+, Android Chrome 110+, WhatsApp in-app browser |
 | Accessibility | WCAG 2.1 AA on payer page |
 
 ## 9. Environments and deployment
 
-| Env | App | Database | Trigger |
+| Env | App | Backend | Trigger |
 |---|---|---|---|
-| Local | `next dev` on a laptop | `supabase start` on the laptop | Manual |
-| CI | Built inside GitHub Actions | Local Supabase inside the runner | Every PR |
-| Pilot | Mac mini, Next.js under pm2, public via Cloudflare Tunnel | Local Supabase on the Mac mini | Merge to `main`, deployed by a self-hosted runner on the Mac mini |
-| Cloud (phase 2) | Vercel | Supabase cloud project | Manual approval on `production` environment, enabled when repo variable `CLOUD_ENABLED` is `true` |
+| Local | `next dev` on a laptop | `docker compose up` (PocketBase on 127.0.0.1:8090) | Manual |
+| CI | Built inside GitHub Actions | The pinned PocketBase binary, fresh data dir (`scripts/pb-test.mjs`) | Every PR and push to `main` |
+| Production | Coolify app, nixpacks, repo root | Coolify app, `backend/Dockerfile` | Coolify deploys each app on push to `main` |
 
-Migrations always run before the app restarts or deploys, and must be backward compatible with the previous app version (expand, then contract).
+Migrations run when PocketBase starts, before it serves requests, all in one transaction. They must be backward compatible with the running app (expand, then contract). Never edit a migration that has run on a database you care about; add a new one.
 
-Mac mini setup, backups and the cloud migration runbook: `docs/MAC-MINI.md`.
+Deploy settings and first-time setup: `docs/MAC-MINI.md`.
 
-**Supabase CLI version:** 2.117.0, pinned in `package.json` (devDependency, run as `npx supabase`) and in `.github/workflows/ci.yml`. Postgres image 17.6.1.167 or newer: 17.6.1.106 segfaults on function permission errors. Match this on the Mac mini.
+**PocketBase version:** 0.40.5, pinned and sha256-checked in `backend/Dockerfile` (linux arm64) and `scripts/pb-test.mjs` (every platform the tests run on). Upgrade both together.
 
-**App variables** (all server-only, never `NEXT_PUBLIC_`): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`, optional `APP_URL` (public origin used in payer links; defaults to the request's forwarded host). `scripts/supabase-env.sh` prints the first four from a running local stack.
+**App variables** (server-only, never `NEXT_PUBLIC_`): `PB_INTERNAL_URL` (PocketBase as the app server reaches it), `APP_URL` (public origin used in payer links and for the Secure cookie flag; defaults to the request's forwarded host). No secrets.
 
-**Pilot secrets** live in `/Users/plspay/plspay/.env.local` on the Mac mini, never in GitHub: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `REDIS_URL`, `BACKUP_PASSPHRASE`, `BACKUP_REMOTE`. Twilio credentials live in `/Users/plspay/plspay/supabase/.env` and are read by `supabase/config.toml`.
+**Backend variables:** see `backend/.env.example`. The only secrets are the R2 backup credentials, set in Coolify and never in git.
 
-**Cloud secrets** (phase 2, in GitHub): `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD_PROD`, `SUPABASE_PROJECT_REF_PROD`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`.
+## Changes
+
+- 2026-10-29: SEC-01, SEC-02, SEC-05, SEC-10 and SEC-11 reworded for the move from Supabase (row-level security, service role, local pilot stack, pg_dump backups) to PocketBase. Their intent is unchanged. SEC-03 gained the PocketBase backstop. SEC-12 is new.
+
+## Retired
+
+- SEC-04 (OTP sends: 3 per phone per 10 minutes, 10 per IP per hour, +65 only): phone OTP sign-in was removed on 2026-10-29. Sign-in limits are SEC-12.

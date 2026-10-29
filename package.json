@@ -5,20 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start -H 127.0.0.1 -p 3000",
+    "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:db": "node scripts/pb-test.mjs vitest run -c vitest.backend.config.mts",
     "test:e2e": "playwright test",
-    "test:db": "supabase test db",
+    "test:e2e:pb": "node scripts/pb-test.mjs playwright test",
     "trace": "node scripts/check-traceability.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run test:db && npm run trace"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.117.1",
-    "ioredis": "^6.0.0",
     "next": "^16.3.6",
+    "pocketbase": "0.28.1",
     "qrcode-generator": "^2.0.4",
     "rate-limiter-flexible": "^11.2.1",
     "react": "^19.3.0",
@@ -35,12 +34,11 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.6",
     "jsqr": "^1.4.0",
-    "supabase": "^2.117.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^5.0.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   }
 }

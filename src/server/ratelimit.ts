@@ -1,58 +1,32 @@
-// One rate-limit interface for the whole app (SPEC section 1, rule 4). Backed by REDIS_URL.
-// Without REDIS_URL it falls back to process memory and warns: fine for a laptop, never for a deployment.
-import { RateLimiterMemory, RateLimiterRedis, RateLimiterRes, type RateLimiterAbstract } from "rate-limiter-flexible";
-import Redis from "ioredis";
+// One rate-limit interface for the whole app (SPEC section 1, rule 4).
+// Counters live in this process's memory. The app runs as a single container, so that is the
+// whole picture; they reset when it restarts or redeploys. PocketBase keeps its own per-IP
+// limits behind these (backend/pb_hooks/plspay.pb.js and its built-in auth limit).
+import { RateLimiterMemory, RateLimiterRes } from "rate-limiter-flexible";
 
-export type LimitName = "payer" | "otpPhone" | "otpIp";
+export type LimitName = "payer" | "signinIp";
 
-// SEC-03, SEC-04
+// SEC-03, SEC-12
 const RULES: Record<LimitName, { points: number; duration: number }> = {
   payer: { points: 30, duration: 60 },          // /p/* and /api/claim, per IP
-  otpPhone: { points: 3, duration: 600 },       // OTP sends per phone
-  otpIp: { points: 10, duration: 3600 },        // OTP sends per IP
+  signinIp: { points: 10, duration: 600 },      // sign-in attempts per IP
 };
 
 export const RATE_LIMIT_PREFIX = "plspay:rl";
 
 declare global {
-  var __plspayRedis: Redis | undefined;
-  var __plspayLimiters: Partial<Record<LimitName, RateLimiterAbstract>> | undefined;
-  var __plspayWarned: boolean | undefined;
+  // Shared across the proxy and route bundles, which load this module separately.
+  var __plspayLimiters: Partial<Record<LimitName, RateLimiterMemory>> | undefined;
 }
 
-function redis(): Redis | undefined {
-  const url = process.env.REDIS_URL;
-  if (!url) {
-    if (!globalThis.__plspayWarned) {
-      globalThis.__plspayWarned = true;
-      console.warn("REDIS_URL is not set: rate limits are held in process memory only");
-    }
-    return undefined;
-  }
-  if (!globalThis.__plspayRedis) {
-    globalThis.__plspayRedis = new Redis(url, { enableOfflineQueue: false, maxRetriesPerRequest: 1, lazyConnect: false });
-    globalThis.__plspayRedis.on("error", () => { /* limiter falls back to insurance; nothing sensitive to log */ });
-  }
-  return globalThis.__plspayRedis;
-}
-
-function limiter(name: LimitName): RateLimiterAbstract {
+function limiter(name: LimitName): RateLimiterMemory {
   globalThis.__plspayLimiters ??= {};
-  const existing = globalThis.__plspayLimiters[name];
-  if (existing) return existing;
-  const rule = RULES[name];
-  const client = redis();
-  const memory = new RateLimiterMemory({ ...rule, keyPrefix: `${RATE_LIMIT_PREFIX}:${name}` });
-  const built = client
-    ? new RateLimiterRedis({ ...rule, storeClient: client, keyPrefix: `${RATE_LIMIT_PREFIX}:${name}`, insuranceLimiter: memory })
-    : memory;
-  globalThis.__plspayLimiters[name] = built;
-  return built;
+  return (globalThis.__plspayLimiters[name] ??= new RateLimiterMemory({ ...RULES[name], keyPrefix: `${RATE_LIMIT_PREFIX}:${name}` }));
 }
 
 export type LimitResult = { ok: true } | { ok: false; retryAfterSeconds: number };
 
-/** Consumes one point. Never throws: a broken store degrades to the in-memory insurance limiter. */
+/** Consumes one point. Never throws. */
 export async function consume(name: LimitName, key: string): Promise<LimitResult> {
   try {
     await limiter(name).consume(key);

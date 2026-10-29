@@ -5,5 +5,6 @@ import nextTs from "eslint-config-next/typescript";
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
-  globalIgnores([".next/**", "out/**", "node_modules/**", "next-env.d.ts", "playwright-report/**", "test-results/**", "supabase/.temp/**"]),
+  // backend/ is PocketBase JSVM code (hooks and migrations), not Node or browser code.
+  globalIgnores([".next/**", "out/**", "node_modules/**", "next-env.d.ts", "playwright-report/**", "test-results/**", "backend/**", ".cache/**"]),
 ]);

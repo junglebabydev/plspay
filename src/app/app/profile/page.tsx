@@ -1,4 +1,4 @@
-import { createSessionClient } from "@/server/supabase";
+import { createSessionClient } from "@/server/pb";
 import { getProfile } from "@/server/data";
 import { ProfileForm } from "./ProfileForm";
 
@@ -6,8 +6,7 @@ export const metadata = { title: "PayNow profile" };
 
 export default async function ProfilePage({ searchParams }: { searchParams: Promise<{ first?: string }> }) {
   const { first } = await searchParams;
-  const supabase = await createSessionClient();
-  const profile = await getProfile(supabase);
+  const profile = await getProfile(await createSessionClient());
   return (
     <main className="flex flex-col gap-4">
       <h1 className="text-2xl font-bold">PayNow profile</h1>

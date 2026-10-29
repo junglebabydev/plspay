@@ -8,8 +8,7 @@ function required(name: string): string {
 }
 
 export const env = {
-  get supabaseUrl() { return required("SUPABASE_URL"); },
-  get supabaseAnonKey() { return required("SUPABASE_ANON_KEY"); },
-  get redisUrl() { return process.env.REDIS_URL ?? ""; },
+  /** PocketBase as this server reaches it, e.g. http://plspay-pb:8090 on the Coolify network. Never sent to the browser. */
+  get pbUrl() { return required("PB_INTERNAL_URL").replace(/\/+$/, ""); },
   get appUrl() { return process.env.APP_URL ?? ""; },
 };

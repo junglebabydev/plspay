@@ -1,7 +1,8 @@
 "use server";
 import { redirect } from "next/navigation";
+import { ClientResponseError } from "pocketbase";
 import { requireUser } from "@/server/auth";
-import { createSessionClient } from "@/server/supabase";
+import { createSessionClient } from "@/server/pb";
 import { getProfile } from "@/server/data";
 import { firstIssue, newCollectionSchema } from "@/lib/validate";
 import { equalShares, makeReferences, makeUnique } from "@/lib/split";
@@ -15,8 +16,8 @@ export async function createCollection(raw: unknown): Promise<CreateResult> {
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   const c = parsed.data;
 
-  const supabase = await createSessionClient();
-  if (!(await getProfile(supabase))) redirect("/app/profile?first=1"); // AC-F02-01
+  const pb = await createSessionClient();
+  if (!(await getProfile(pb))) redirect("/app/profile?first=1"); // AC-F02-01
 
   let amounts: number[];
   try {
@@ -30,27 +31,29 @@ export async function createCollection(raw: unknown): Promise<CreateResult> {
   const references = makeReferences(c.title, c.payers.map((p) => p.first_name)); // AC-F03-05
 
   const expiresAt = new Date(Date.now() + c.expiry_days * 24 * 3600 * 1000).toISOString(); // AC-F03-07
-  const { data: created, error: cErr } = await supabase
-    .from("collections")
-    .insert({ title: c.title, kind: c.kind, expires_at: expiresAt }) // AC-F03-09
-    .select("id")
-    .single();
-  if (cErr || !created) {
-    if (cErr?.message.includes("profile_required")) redirect("/app/profile?first=1");
+  // One transaction in the backend: the collection and every payer, or nothing.
+  let created: { id: string };
+  try {
+    created = await pb.send<{ id: string }>("/api/plspay/collections", {
+      method: "POST",
+      body: {
+        title: c.title,
+        kind: c.kind, // AC-F03-09
+        expires_at: expiresAt,
+        payers: c.payers.map((p, i) => ({
+          first_name: p.first_name,
+          whatsapp: p.whatsapp || "",
+          amount_cents: unique.amounts[i]!,
+          reference: references[i]!,
+        })),
+      },
+    });
+  } catch (err) {
+    if (err instanceof ClientResponseError && err.status === 400) {
+      if (err.message.includes("PayNow profile")) redirect("/app/profile?first=1");
+      return { error: "Couldn't add the payers. Check names are different and amounts are above S$0.00." };
+    }
     return { error: "Couldn't create the collection. Try again." };
   }
-
-  const rows = c.payers.map((p, i) => ({
-    collection_id: created.id,
-    first_name: p.first_name,
-    whatsapp: p.whatsapp || null,
-    amount_cents: unique.amounts[i]!,
-    reference: references[i]!,
-  }));
-  const { error: pErr } = await supabase.from("payers").insert(rows);
-  if (pErr) {
-    await supabase.from("collections").delete().eq("id", created.id);
-    return { error: "Couldn't add the payers. Check names are different and amounts are above S$0.00." };
-  }
-  redirect(`/app/c/${created.id}`); // AC-F03-06: tokens and PayNow snapshot are set by the database
+  redirect(`/app/c/${created.id}`); // AC-F03-06: tokens and PayNow snapshot are set by the backend
 }

@@ -1,10 +1,12 @@
-// F04: payer page. Seeded by supabase/seed.sql: token e2e_valid_token_0000000 (Dinner, S$25.00, DINN-PRIYA),
-// e2e_revoked_token_00000, e2e_expired_token_00000. Other payer in the collection: Ravi.
+// F04: payer page. Seeded by global-setup.ts: a valid token (Dinner, S$25.00, DINN-PRIYA), a revoked one
+// (Ravi, in the same collection) and an expired one. Tokens come from the backend, via fixtures.json.
 import { test, expect, request as playwrightRequest } from "@playwright/test";
 import { decodeQrDataUrl, parseTlv } from "../helpers/qr-decode";
+import { fixtures } from "./accounts";
 import { ipFor } from "./helpers";
 
-const VALID = "/p/e2e_valid_token_0000000";
+/** Read when a test runs: global-setup.ts writes the fixtures after Playwright has loaded this file. */
+const VALID = () => `/p/${fixtures().valid}`;
 const TRANSFER = "Can't scan? Pay by PayNow transfer";
 const GONE = "This link no longer works. Ask the person collecting for a new one.";
 
@@ -14,7 +16,7 @@ test.use({
 });
 
 test("AC-F04-01 shows title, amount, payee, reference and a PayNow QR", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   await expect(page.getByRole("heading", { name: "Dinner" })).toBeVisible();
   await expect(page.getByTestId("amount")).toHaveText("S$25.00");
   await expect(page.getByText("E2E Organiser").first()).toBeVisible();
@@ -23,7 +25,7 @@ test("AC-F04-01 shows title, amount, payee, reference and a PayNow QR", async ({
 });
 
 test("AC-F04-02 the QR decodes to a valid SGQR PayNow payload", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   const src = await page.getByAltText("PayNow QR code").getAttribute("src");
   const payload = decodeQrDataUrl(src!);
   expect(payload).toBeTruthy();
@@ -42,7 +44,7 @@ test("AC-F04-02 the QR decodes to a valid SGQR PayNow payload", async ({ page })
 });
 
 test("AC-F04-03 hides other payers, totals and the organiser's WhatsApp", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   const html = await page.content();
   expect(html).not.toContain("Ravi");
   expect(html).not.toMatch(/collected/i);
@@ -52,7 +54,7 @@ test("AC-F04-03 hides other payers, totals and the organiser's WhatsApp", async 
 
 test("AC-F04-04 invalid, expired and revoked tokens render identical HTML with 404", async ({ page }) => {
   const bodies: string[] = [];
-  for (const t of ["nope", "e2e_expired_token_00000", "e2e_revoked_token_00000"]) {
+  for (const t of ["nope", fixtures().expired, fixtures().revoked]) {
     const res = await page.goto(`/p/${t}`);
     expect(res!.status()).toBe(404);
     await expect(page.getByText(GONE)).toBeVisible();
@@ -62,7 +64,7 @@ test("AC-F04-04 invalid, expired and revoked tokens render identical HTML with 4
 });
 
 test("AC-F04-05 offers Save QR and copy PayNow ID, amount and reference", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   const save = page.getByRole("link", { name: "Save QR" });
   await expect(save).toBeVisible();
   expect(await save.getAttribute("download")).toBe("paynow-DINN-PRIYA.png");
@@ -72,14 +74,14 @@ test("AC-F04-05 offers Save QR and copy PayNow ID, amount and reference", async 
 });
 
 test("AC-F04-06 tells the payer to check the payee name in their bank", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   await expect(page.getByText("Check your bank shows the name E2E Organiser before you confirm")).toBeVisible();
 });
 
 test("AC-F04-08 SEC-03 returns 429 after 30 requests a minute from one IP", async ({ baseURL }, testInfo) => {
-  const ctx = await playwrightRequest.newContext({ baseURL, extraHTTPHeaders: { "x-forwarded-for": ipFor(testInfo) + "9" } });
+  const ctx = await playwrightRequest.newContext({ baseURL, extraHTTPHeaders: { "x-forwarded-for": ipFor(testInfo, 9) } });
   const codes: number[] = [];
-  for (let i = 0; i < 35; i++) codes.push((await ctx.get(VALID)).status());
+  for (let i = 0; i < 35; i++) codes.push((await ctx.get(VALID())).status());
   expect(codes.slice(0, 30).every((c) => c === 200)).toBe(true);
   expect(codes[34]).toBe(429);
   expect((await ctx.post("/api/claim", { data: { token: "x" } })).status()).toBe(429);
@@ -87,7 +89,7 @@ test("AC-F04-08 SEC-03 returns 429 after 30 requests a minute from one IP", asyn
 });
 
 test("AC-F04-09 SEC-06 no payer name or phone in the head or Open Graph tags", async ({ page }) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   const head = await page.locator("head").innerHTML();
   expect(head).not.toContain("Priya");
   expect(head).not.toContain("91234567");
@@ -96,7 +98,7 @@ test("AC-F04-09 SEC-06 no payer name or phone in the head or Open Graph tags", a
 });
 
 test("SEC-07 security headers are present on the payer page", async ({ page }) => {
-  const res = await page.goto(VALID);
+  const res = await page.goto(VALID());
   const h = res!.headers();
   expect(h["content-security-policy"]).toMatch(/default-src 'self'/);
   expect(h["content-security-policy"]).toMatch(/frame-ancestors 'none'/);
@@ -107,7 +109,7 @@ test("SEC-07 security headers are present on the payer page", async ({ page }) =
 });
 
 test("AC-F04-10 collapsed PayNow transfer steps with a Copy button per value", async ({ page, context }, testInfo) => {
-  await page.goto(VALID);
+  await page.goto(VALID());
   const steps = page.getByTestId("transfer-steps").getByRole("listitem");
   await expect(steps.first()).toBeHidden(); // collapsed by default
   await page.getByText(TRANSFER).click();

@@ -1,14 +1,18 @@
 // Input rules shared by forms and server actions. Specs: F01, F02, F03.
 import { z } from "zod";
 
-/** AC-F01-02: Singapore mobile only. Accepts 91234567, +65 9123 4567, 6591234567. Returns E.164 or null. */
+/** Singapore mobile only (WhatsApp numbers). Accepts 91234567, +65 9123 4567, 6591234567. Returns E.164 or null. */
 export function normaliseSgPhone(input: string): string | null {
   const digits = input.replace(/[\s\-().]/g, "");
   const m = /^(?:\+?65)?([89]\d{7})$/.exec(digits);
   return m ? `+65${m[1]}` : null;
 }
 
-export const otpCodeSchema = z.string().trim().regex(/^\d{6}$/, "Enter the 6-digit code");
+/** AC-F01-04: email and password. Organiser accounts are created by a superuser (AC-F01-06). */
+export const signInSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Enter your email").max(320),
+  password: z.string().min(1, "Enter your password").max(256),
+});
 
 /** AC-F02-02 */
 export const paynowMobile = /^[89]\d{7}$/;

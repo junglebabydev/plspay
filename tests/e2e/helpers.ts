@@ -1,27 +1,26 @@
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { accountEmail, accounts } from "./accounts";
 
-export const OTP = "123456";
-export const SETUP_PHONE = "91234567"; // 6591234567 in supabase/config.toml [auth.sms.test_otp]
-
-/** One test OTP number per (project, slot) so per-phone rate limits (SEC-04) never collide across tests. */
-export function phoneFor(testInfo: TestInfo, slot: number): string {
-  const base = testInfo.project.name === "android" ? 91234580 : 91234570;
-  if (slot < 0 || slot > 9) throw new Error("slot 0-9");
-  return String(base + slot);
+/** The e2e account for this test's project (see global-setup.ts). */
+export function accountFor(testInfo: TestInfo, role: "fresh" | "paynow" | "other" | "signin"): string {
+  return accountEmail(role, testInfo.project.name);
 }
 
-/** A distinct fake client IP per test, so per-IP limits (SEC-03, SEC-04) are isolated. clientIp() reads the last hop. */
-export function ipFor(testInfo: TestInfo): string {
+/**
+ * A distinct fake client IP per test, per `n` and per run, so per-IP limits (SEC-03, SEC-12) are isolated.
+ * clientIp() reads the last x-forwarded-for hop, and the app passes it on to PocketBase, which ignores
+ * an address that isn't a valid IP: so this always returns a valid one.
+ */
+export function ipFor(testInfo: TestInfo, n = 0): string {
   let h = 0;
-  for (const ch of testInfo.project.name + "|" + testInfo.titlePath.join("/")) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  for (const ch of `${process.env.E2E_RUN_SALT ?? ""}|${testInfo.project.name}|${testInfo.titlePath.join("/")}|${n}`) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return `10.${(h >>> 16) & 255}.${(h >>> 8) & 255}.${h & 255}`;
 }
 
-export async function signIn(page: Page, phone: string) {
+export async function signIn(page: Page, email: string, password = accounts().password) {
   await page.goto("/signin");
-  await page.getByLabel("Mobile number").fill(phone);
-  await page.getByRole("button", { name: "Send code" }).click();
-  await page.getByLabel("Code").fill(OTP);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/app/);
 }
@@ -58,7 +57,7 @@ export async function createCollection(page: Page, opts: { title: string; kind?:
     if (mode === "custom" && p.amount !== undefined) await page.getByLabel(`Payer ${i + 1} amount`).fill(p.amount);
   }
   await page.getByRole("button", { name: "Create collection" }).click();
-  await expect(page).toHaveURL(/\/app\/c\/[0-9a-f-]{36}$/);
+  await expect(page).toHaveURL(/\/app\/c\/[a-z0-9]{15}$/);
   return page.url().split("/").pop()!;
 }
 
